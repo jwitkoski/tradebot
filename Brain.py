@@ -12,7 +12,7 @@ Pub/Sub endpoints are for inter program communications??
         -Responds to brain with whether the buy/sell is a good idea
         -Like a sanity check; ensures the brain doesn't get any wild ideas
 '''
-import TensorFlow as TF
+import tensorflow as tf
 
 class Brain:
     def __intit__(self, pub_endpoint, sub_endpoint):

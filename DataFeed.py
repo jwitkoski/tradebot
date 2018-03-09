@@ -106,6 +106,7 @@ class DataFeed:
             return
         self.subbed_pairs = pair_str
         self.subbed_channels = channel_str
+        self.msg_types = channel_str
         #build subscribe message
         sub_msg = json.dumps(\
         {\
@@ -113,6 +114,10 @@ class DataFeed:
             "product_ids": pair_str,\
             "channels": channel_str
         })
+        self.msg_types.append('subscriptions')
+        self.msg_types.append('error')
+        self.msg_types.append('snapshot')
+        self.msg_types.append('l2update')
         self.endpoint.send(sub_msg)
         self.__isRunning = True
         self.__handleThread.start()
@@ -139,9 +144,34 @@ class DataFeed:
         print 'Unknown Message type encountered: %s\n' % msg['type']
         print msg
 
+    def subscriptions_cb(self, msg):
+        toprint = 'Successfully Subscribed:\n'
+        for ch in msg['channels']:
+            toprint += '  ' + ch['name'] + '\n'
+            for ID in ch['product_ids'][:-1]:
+                toprint += '    ' + ID + '\n'
+            else:
+                toprint += '    ' + ch['product_ids'][-1]
+        print toprint
+        del msg
+        return
+
+    def error_cb(self, msg):
+        print 'GDAX responded with an error message: %s - %s' %(msg['message'], msg['reason'])
+        del msg
+
     def heartbeat_cb(self, msg):
         print 'Received Hearbeat Message #%s for %s' % (msg['sequence'], msg['product_id'])
+        #This is where the necessary data will be parsed and sent to the brain
+        #-----> Might need some interproccess communication?
         del msg
+
+    def ticker_cb(self, msg):
+        #print msg
+        print 'Received Ticker Message #%s for %s with seq. #%s' \
+                % (msg['sequence'], msg['product_id'], msg['sequence'])
+        print '     Most Recent Price: %s' % msg['price']
+        
 
         '''
         - Runs on its own thread
@@ -177,8 +207,8 @@ class DataFeed:
             -Callbacks will parse the rest of message and send relevant data off to TensorFlow to get learnt
         '''
 
-pairs = input('Input Pairs to Subscribe to:')
-df = DataFeed('wss://ws-feed.gdax.com', pairs, 'heartbeat')
+#pairs = input('Input Pairs to Subscribe to:')
+df = DataFeed('wss://ws-feed.gdax.com', 'eth-usd', 'ticker')
 try:
     while True:
         df.check()
