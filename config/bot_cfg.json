@@ -1,0 +1,57 @@
+{
+	"DataFeed":{
+		"Subscriptions":{
+			"Socket": "wss://ws-feed.gdax.com",
+			"Symbols":[
+				"ETH-USD",
+				"BTC-USD",
+				"BCH-USD",
+				"LTC-USD",
+			],
+			"Channels":{
+				"level2": ["snapshot", "l2update",],
+				"--ticker": ["ticker",],
+				"--heartbeat": ["heartbeat",],
+			},
+			"Messages":[
+				"error",
+				"subscriptions",
+			],
+			
+		},
+	}
+	"Logging":{
+		"version": 1,
+		"disable_existing_loggers": false,
+		"formatters": {
+			"market": {
+				"format": "[%(asctime)s] %(name)s - %(message)s",
+				"datefmt": "%d/%m/%Y - %H:%M:%S"
+			},
+			"standard": {
+				"format": "[%(asctime)s] %(name)s -%(levelname)s - %(message)s",
+				"datefmt": "%d/%m/%Y - %H:%M:%S"
+			},
+		},
+		"handlers": {
+			"console": {
+				"class": "logging.StreamHandler",
+				"level": "DEBUG",
+				"formatter": "standard",
+				"stream": "ext://sys.stdout"
+			},
+			"markets_files": {
+				"level": "DEBUG",
+				"class": "DataLogger.Deferred_File_Handler",
+				"filename": ".log",
+			},
+		}
+		"loggers": {
+			"Launcher": {
+				"handlers":
+				},
+		},
+		"LOG_ROOT": "/home/jwitkoski/tradebot/var/log/"
+	}
+
+
