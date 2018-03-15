@@ -1,6 +1,7 @@
 from logging import getLoggerClass, addLevelName, setLoggerClass, NOTSET, Logger
 from logging import FileHandler as BaseFileHandler
 import sys
+from os.path import join as join_path
 sys.path.append('config/')
 from config import log_cfg
 
@@ -19,18 +20,21 @@ class TheLogger(getLoggerClass()):
 
 
 class Deferred_File_Handler(BaseFileHandler):
-    def __init__(self, filename, *args, **kwargs):
-        self.filename = filename
-        self.filename_set = False
+    def __init__(self, filename=None, *args, **kwargs):
+        if filename is not None:
+            self.filename = filename
+            self._filename_set = True
+        else:
+            self._filename_set = False
         self.log_config = log_cfg
-        kwargs['delay'] = True
-        BaseFileHandler.__init__(self, '/dev/null', *args, **kwargs)
+        BaseFileHandler.__init__(self, filename, *args, **kwargs)
 
     def setFilename(self, filename):
         self.filename = filename
-        self.filename_set = True
+        self._filename_set = True
 
     def _open(self):
         if self._filename_set:
-            self.baseFilename = os.path.join(log_cfg['LOG_ROOT'], self.filename)
+            #from os from path import 
+            self.baseFilename = join_path(log_cfg['LOG_ROOT'], self.filename)
             return BaseFileHandler._open(self)

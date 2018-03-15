@@ -1,4 +1,4 @@
 import json
 
-settings = json.load(open('bot_cfg.json')))
+settings = json.loads(open('config/bot_cfg.json').read())#, object_hook=lambda d: namedtuple('X', d.keys())(*d.values()))
 log_cfg = settings['Logging']

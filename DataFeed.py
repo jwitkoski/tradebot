@@ -12,17 +12,25 @@ Python also has a JSON encoder and decoder that we will use to pack/parse messag
 import websocket as ws
 import json
 from threading import Thread
-import types
 from time import sleep
 from Queue import Queue
+import logging
+from DataLogger import DataLogger
         
 class DataFeed:
 
-    def __init__(self, addr, pairs, channels):
-        self.addr = addr
-        self.pairs = pairs
-        self.channels = channels
-        self.endpoint = ws.create_connection(str(addr))
+    def __init__(self, config, log_market=False):
+        self.config = config
+        self.log = logging.getLogger('DataFeed')
+        self.addr = str(config['Subscriptions']['Socket'])
+        self.pairs = [str(p) for p in config['Subscriptions']['Symbols']]
+        self.channels = [str(c) for c in config['Subscriptions']['Channels'].keys() if not str(c).startswith('--')]
+        self.subbed_messages = [str(m) for m in config['Subscriptions']['Messages']]
+        for ch in self.channels:
+            for msg in config['Subscriptions']['Channels'][ch]:
+                self.subbed_messages.append(str(msg))
+        self.dataLogger = DataLogger(self.pairs, self.subbed_messages, log_market)
+        self.__endpoint = ws.create_connection(str(self.addr))
         self.__msgQ = Queue()
         self.__handleThread = Thread(\
             target = self.__handle_q,\
@@ -34,6 +42,7 @@ class DataFeed:
         self.__listenThread.daemon = True
         self.__isRunning = False
         self.pendingException = None
+        self.log.info('Initialized DataFeed; Subscribing and Listening...')
         self.__listenThread.start()
 
     class BaseError(Exception):
@@ -48,8 +57,10 @@ class DataFeed:
         def __init__(self, outer_obj, msg):
             super(DataFeed.SubscribeError, self).__init__(outer_obj, msg)
             getattr(self.outer_obj, 'raise_exc')(self)
+        def __str__(self):
+            return self.what()
         def what(self):
-            print('DataFeed.SubscribeError: Could not subscribe to desired pair(s)/channel(s) - %s' % self.err)
+            return 'DataFeed.SubscribeError: Could not subscribe to desired pair(s)/channel(s) - %s' % self.err
 
     def check(self):
         if self.pendingException is not None:
@@ -104,9 +115,6 @@ class DataFeed:
         else:
             self.SubscribeError(self, 'Invalid \'channels\' Argument: must be a string or list of strings.')
             return
-        self.subbed_pairs = pair_str
-        self.subbed_channels = channel_str
-        self.msg_types = channel_str
         #build subscribe message
         sub_msg = json.dumps(\
         {\
@@ -114,19 +122,16 @@ class DataFeed:
             "product_ids": pair_str,\
             "channels": channel_str
         })
-        self.msg_types.append('subscriptions')
-        self.msg_types.append('error')
-        self.msg_types.append('snapshot')
-        self.msg_types.append('l2update')
-        self.endpoint.send(sub_msg)
+        self.__endpoint.send(sub_msg)
         self.__isRunning = True
         self.__handleThread.start()
-        self.recvLoop()
+        #self.recvLoop()
 
     def recvLoop(self):
+        self.__isRunning = True
         while self.__isRunning:
-            msg = json.loads(self.endpoint.recv())
-            if msg['type'] in self.subbed_channels:
+            msg = json.loads(self.__endpoint.recv())
+            if msg['type'] in self.subbed_messages:
                 cb = getattr(self, msg['type']+'_cb')
                 self.__msgQ.put((cb, msg))
             else:
@@ -151,26 +156,35 @@ class DataFeed:
             for ID in ch['product_ids'][:-1]:
                 toprint += '    ' + ID + '\n'
             else:
-                toprint += '    ' + ch['product_ids'][-1]
-        print toprint
+                toprint += '    ' + ch['product_ids'][-1] + '\n'
+        self.log.info(toprint)
         del msg
         return
 
     def error_cb(self, msg):
-        print 'GDAX responded with an error message: %s - %s' %(msg['message'], msg['reason'])
+        self.log.error('GDAX ERROR: %s - %s' %(msg['message'], msg['reason']))
+        #print 'GDAX responded with an error message: %s - %s' %(msg['message'], msg['reason'])
         del msg
 
     def heartbeat_cb(self, msg):
-        print 'Received Hearbeat Message #%s for %s' % (msg['sequence'], msg['product_id'])
+        #print 'Received Hearbeat Message #%s for %s' % (msg['sequence'], msg['product_id'])
+        self.dataLogger.log(msg)
         #This is where the necessary data will be parsed and sent to the brain
         #-----> Might need some interproccess communication?
         del msg
 
     def ticker_cb(self, msg):
         #print msg
-        print 'Received Ticker Message #%s for %s with seq. #%s' \
-                % (msg['sequence'], msg['product_id'], msg['sequence'])
-        print '     Most Recent Price: %s' % msg['price']
+        self.dataLogger.log(msg)
+        #print 'Received Ticker Message #%s for %s with seq. #%s' \
+        #        % (msg['sequence'], msg['product_id'], msg['sequence'])
+        #print '     Most Recent Price: %s' % msg['price']
+
+    def l2update_cb(self, msg):
+        self.dataLogger.log(msg)
+
+    def snapshot_cb(self, msg):
+        self.dataLogger.log(msg)
         
 
         '''
@@ -208,6 +222,7 @@ class DataFeed:
         '''
 
 #pairs = input('Input Pairs to Subscribe to:')
+'''
 df = DataFeed('wss://ws-feed.gdax.com', 'eth-usd', 'ticker')
 try:
     while True:
@@ -218,3 +233,4 @@ except DataFeed.SubscribeError as e:
     df.clrExc()
     raise e
 df.close()
+'''
