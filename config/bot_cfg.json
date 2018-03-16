@@ -38,14 +38,15 @@
                 "level": "DEBUG",
                 "formatter": "standard",
                 "stream": "ext://sys.stdout"
-            },
-            "markets_files":{
-                "class": "DataLogger.Deferred_File_Handler",
-                "filename": ".log"
             }
         },
         "loggers":{
             "Launcher":{
+                "level": "DEBUG",
+                "handlers": ["console"],
+                "propogate": "no"
+            },
+            "GDAX_Client":{
                 "level": "DEBUG",
                 "handlers": ["console"],
                 "propogate": "no"
@@ -56,7 +57,7 @@
                 "propogate": "no"
             },
             "DataLogger":{
-                "level": "DEBUG",
+                "level": "INFO",
                 "handlers": ["console"],
                 "propogate": "no"
             }

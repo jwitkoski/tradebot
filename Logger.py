@@ -7,10 +7,10 @@ from config import log_cfg
 
 MARKET = 5
 
-class TheLogger(getLoggerClass()):
+class Logger_(getLoggerClass()):
     MARKET = 5
     def __init__(self, name, level=NOTSET):
-        super(TheLogger, self).__init__(name, level)
+        super(Logger_, self).__init__(name, level)
         #Logger.__init__(self, name, level)
         addLevelName(MARKET, 'MARKET')
 

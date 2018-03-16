@@ -12,7 +12,7 @@ Python also has a JSON encoder and decoder that we will use to pack/parse messag
 import websocket as ws
 import json
 from threading import Thread
-from time import sleep
+from time import sleep, time
 from Queue import Queue
 import logging
 from DataLogger import DataLogger
@@ -30,20 +30,19 @@ class DataFeed:
             for msg in config['Subscriptions']['Channels'][ch]:
                 self.subbed_messages.append(str(msg))
         self.dataLogger = DataLogger(self.pairs, self.subbed_messages, log_market)
-        self.__endpoint = ws.create_connection(str(self.addr))
-        self.__msgQ = Queue()
-        self.__handleThread = Thread(\
-            target = self.__handle_q,\
+        self._endpoint = ws.create_connection(str(self.addr), max_size=None)
+        self._msgQ = Queue()
+        self._handleThread = Thread(\
+            target = self._handle_q,\
             name = 'Message_Handler_Thread')
-        self.__handleThread.daemon = True
-        self.__listenThread = Thread(\
-            target = self.__subscribe_and_listen,\
+        self._handleThread.daemon = True
+        self._listenThread = Thread(\
+            target = self._recvLoop,\
             name = 'Listener_Thread')
-        self.__listenThread.daemon = True
-        self.__isRunning = False
+        self._listenThread.daemon = True
+        self._isRunning = False
         self.pendingException = None
-        self.log.info('Initialized DataFeed; Subscribing and Listening...')
-        self.__listenThread.start()
+        self.log.debug('Initialized DataFeed!')
 
     class BaseError(Exception):
         def __init__(self, outer_obj, msg):
@@ -64,22 +63,20 @@ class DataFeed:
 
     def check(self):
         if self.pendingException is not None:
-            raise self.pendingException
+            pendingException = self.pendingException
+            self.pendingException = None
+            raise pendingException
 
     def raise_exc(self, err):
         self.pendingException = err
 
-    def clrExc(self):
-        self.pendingException = None
-
     def close(self):
-        self.__isRunning = False
-        self.__listenThread.join()
-        self.__msgQ.join()
-        self.__handleThread.join()
+        self._isRunning = False
+        self._listenThread.join()
+        self._msgQ.join()
+        self._handleThread.join()
 
-         
-    def __subscribe_and_listen(self):
+    def subscribe(self):
         def all_same_type(typ, iterable):
             return all([isinstance(obj, typ) for obj in iterable])
         #Prepare [pairs] for the sub message
@@ -122,45 +119,66 @@ class DataFeed:
             "product_ids": pair_str,\
             "channels": channel_str
         })
-        self.__endpoint.send(sub_msg)
-        self.__isRunning = True
-        self.__handleThread.start()
-        #self.recvLoop()
+        self._endpoint.send(sub_msg)
+        self._isRunning = True
+        status = self._recvOnce()
+        start = time()
+        while not status and time() - start < 10:
+            status = self._recvOnce()
+        if status:
+            return True
+        else:
+            self.log.error('Timed out waiting for subscription confirmation from GDAX!')
+            return False
+            
 
-    def recvLoop(self):
-        self.__isRunning = True
-        while self.__isRunning:
-            msg = json.loads(self.__endpoint.recv())
+    def start(self):
+        self._handleThread.start()
+        self._listenThread.start()
+        self.log.info('Entering Receive Loop.')
+
+    def _recvLoop(self):
+        while self._isRunning:
+            msg = json.loads(self._endpoint.recv())
             if msg['type'] in self.subbed_messages:
                 cb = getattr(self, msg['type']+'_cb')
-                self.__msgQ.put((cb, msg))
+                self._msgQ.put((cb, msg))
             else:
-                self.__msgQ.put((self.unknownType_cb, msg))
+                self._msgQ.put((self.unknownType_cb, msg))
+            self.check()
             sleep(0.25)
         return
 
-    def __handle_q(self):
-        while self.__isRunning or not self.__msgQ.empty():
-            task = self.__msgQ.get()
+    def _recvOnce(self):
+        msg = json.loads(self._endpoint.recv())
+        if str(msg['type']) == 'subscriptions':
+            return getattr(self, msg['type']+'_cb')(msg)
+        if msg['type'] in self.subbed_messages:
+            cb = getattr(self, msg['type']+'_cb')
+            self._msgQ.put((cb, msg))
+        else:
+            self._msgQ.put((self.unknownType_cb, msg))
+        return False
+
+    def _handle_q(self):
+        while self._isRunning or not self._msgQ.empty():
+            task = self._msgQ.get()
             task[0](task[1])
-            self.__msgQ.task_done()
+            self._msgQ.task_done()
 
     def unknownType_cb(self, msg):
         print 'Unknown Message type encountered: %s\n' % msg['type']
         print msg
 
-    def subscriptions_cb(self, msg):
-        toprint = 'Successfully Subscribed:\n'
-        for ch in msg['channels']:
-            toprint += '  ' + ch['name'] + '\n'
-            for ID in ch['product_ids'][:-1]:
-                toprint += '    ' + ID + '\n'
-            else:
-                toprint += '    ' + ch['product_ids'][-1] + '\n'
-        self.log.info(toprint)
-        del msg
-        return
-
+    def subscriptions_cb(self, response):
+        status_channels = []
+        status_pairs = []
+        for chan_from_msg in response['channels']:
+            status_channels.append(str(chan_from_msg['name']) in self.channels)
+            for pair_from_msg in chan_from_msg['product_ids']:
+                status_pairs.append(str(pair_from_msg) in self.pairs)
+        return (all(status_channels) and all(status_channels))
+        
     def error_cb(self, msg):
         self.log.error('GDAX ERROR: %s - %s' %(msg['message'], msg['reason']))
         #print 'GDAX responded with an error message: %s - %s' %(msg['message'], msg['reason'])
